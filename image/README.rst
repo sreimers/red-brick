@@ -7,13 +7,14 @@ Requirements
 ------------
 
 This scripts require a recent Debian or Ubuntu installation with Internet
-connection. Also make sure that the filesystem you're running this on is not
-mounted with the ``nodev`` or ``noexec`` options as they hinder the root-fs
-generation process. If you're using a separate partition for ``/home`` then it
-is likely to be mounted with ``nodev`` and ``noexec``. In this case an easy
-workaround is to build the image in a directory that is mounted without this
-options, or to remount ``/home`` without this options. Building the image might
-also not work inside an encrypted home directory.
+connection and at least 15GB free disk space. Also make sure that the
+filesystem you're running this on is not mounted with the ``nodev`` or
+``noexec`` options as they hinder the root-fs generation process. If you're
+using a separate partition for ``/home`` then it is likely to be mounted with
+``nodev`` and ``noexec``. In this case an easy workaround is to build the image
+in a directory that is mounted without this options, or to remount ``/home``
+without this options. Building the image might also not work inside an
+encrypted home directory.
 
 In Ubuntu 14.04 the multistrap package has a bug. The ``/usr/sbin/multistrap``
 script is written in Perl and it uses an undefined ``$forceyes`` variable in
@@ -21,14 +22,32 @@ one place. To fix the problem you need to edit ``/usr/sbin/multistrap`` and
 remove ``$forceyes`` from it. If you don't have the multistrap package installed
 yet, then the ``prepare-host.sh`` script in the next step will install it.
 
-Building the Image
-------------------
+Preparations
+------------
 
-First run::
+Because the Node.js and NPM packages are different between Ubuntu, Debian and
+different Debian versions you have to install them manually for now. On Ubuntu
+and Debian jessie and sid just install the ``npm`` package using::
+
+ sudo apt-get install npm
+
+On Debian wheezy follow this `setup instructions
+<https://github.com/joyent/node/wiki/installing-node.js-via-package-manager>`__
+to install Node.js including NPM. In short, run::
+
+ curl -sL https://deb.nodesource.com/setup | sudo bash -
+ sudo apt-get install nodejs
+
+After installing Node.js and NPM run::
 
  ./prepare-host.sh
 
-to install required tools. Next run::
+to install the remaining required tools and packages.
+
+Building the Image
+------------------
+
+After the preparations are done run::
 
  ./update-source.sh
 
@@ -43,11 +62,11 @@ configurations. For example::
 
  ./compile-source.sh full
 
-The next step is to create the root-fs. This will download several Debian and
-Raspbian packages. If you intent to create different root-fs it's useful to
-setup apt-cacher daemons to avoid downloading all the packages multiple times,
-see the apt-cacher section below for further details. Whether you decided to
-use apt-cacher or not the next step is the same::
+The next step is to create the root-fs. This will download several Debian
+packages. If you intent to create different root-fs it's useful to setup
+apt-cacher daemons to avoid downloading all the packages multiple times, see
+the apt-cacher section below for further details. Whether you decided to use
+apt-cacher or not the next step is the same::
 
  sudo ./make-root-fs.sh <config-name>
 
@@ -73,10 +92,10 @@ start the apt-cacher daemons by running::
  ./start-apt-cacher.sh
 
 Now ``./make-root-fs.sh`` will automatically use the apt-cacher daemons instead
-of directly downloading from the Debian and Raspbian APT servers.
+of directly downloading from the Debian APT servers.
 
-Writing the Image to a SD card
-------------------------------
+Writing the Image to an SD Card
+-------------------------------
 
 The image can be transferred to an SD card with::
 
@@ -96,42 +115,41 @@ The default user name is ``tf`` with password ``tf``.
 The full image runs a LXDE desktop on the HDMI interface. All images have a
 serial console running on the USB OTG interface.
 
-Editing kernel config
----------------------
+Editing the Kernel Config
+-------------------------
 
 First update the kernel sources::
- 
-  ./update-source.sh
 
-Go to ``red-brick/image/source/red-brick-linux-sunxi/`` and copy full or fast config::
+ ./update-source.sh
 
- cp ../../config/kernel/red_brick_{full|fast}_defconfig .config
+Then run the edit script that starts the graphical config editor::
 
-run xconfig::
+ ./edit-kernel-config.sh <config-name>
 
- make ARCH=arm xconfig
+After you edited and saved the config changes close the config editor and the
+edit script will take care of the rest. Then recompile the kernel::
 
-copy config back::
+ ./compile-source.sh <config-name>
 
- cp .config ../../config/kernel/red_brick_{full|fast}_defconfig
+If you already have an image written to a SD card then you can update the
+kernel on it::
 
+ sudo ./update-kernel-on-sd-card.sh <config-name> <device>
 
-Enable serial console for Debug Brick
+For example (assuming that ``/dev/sdb`` is your SD card)::
+
+ sudo ./update-kernel-on-sd-card.sh full /dev/sdb
+
+Now the SD card contains the modified kernel.
+
+Enable Serial Console for Debug Brick
 -------------------------------------
 
-In ``config/kernel/red_brick_*_defconfig`` add::
+In ``config/kernel/red_brick_*_defconfig`` add this to ``CONFIG_CMDLINE``::
 
  console=ttyS0,115200
 
-to ``CONFIG_CMDLINE`` and ensure that the following two are set::
+For kernel debug output you can set these values too::
 
  CONFIG_SW_DEBUG_UART=3
  CONFIG_DEBUG_LL=y
-
-In ``patches/root-fs/{full|fast}/etc/inittab`` uncomment::
-
- T1:23:respawn:/sbin/getty --autologin tf -L ttyS0 115200 vt100
-
-In ``/etc/securetty`` uncomment::
-
- ttyS0

@@ -1,25 +1,38 @@
-#! /bin/bash -exu
+#!/bin/bash -exu
+
+# RED Brick Image Generator
+# Copyright (C) 2014-2015 Matthias Bolte <matthias@tinkerforge.com>
+# Copyright (C) 2014 Ishraq Ibne Ashraf <ishraq@tinkerforge.com>
+#
+# make-image.sh: Combines root-fs, kernel and related stuff into the final image file
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public
+# License along with this program; if not, write to the
+# Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+# Boston, MA 02111-1307, USA.
 
 . ./utilities.sh
 
-ROOT_UID="0"
-
-# Check if running as root
-if [ "$(id -u)" -ne "$ROOT_UID" ]
-then
-    report_error "You must be root to execute the script"
-    exit 1
-fi
+ensure_running_as_root
 
 BASE_DIR=`pwd`
 CONFIG_DIR="$BASE_DIR/config"
-
 . $CONFIG_DIR/common.conf
 
 # Getting the image configuration variables
 if [ "$#" -ne 1 ]; then
-    report_error "Too many or too few parameters (provide image configuration name)"
-    exit 1
+	report_error "Too many or too few parameters (provide image configuration name)"
+	exit 1
 fi
 
 CONFIG_NAME=$1
@@ -27,57 +40,59 @@ CONFIG_NAME=$1
 
 # Cleanup function in case of interrupts
 function cleanup {
-    report_info "Cleaning up before exit..."
+	report_info "Cleaning up before exit..."
 
-    # Unmount and release loop device
-    set +e
-    if [ -n "${loop_dev_p1+1}" ]
-    then
-        umount -f $loop_dev_p1
-        losetup -d $loop_dev_p1
-    fi
-    
-    if [ -n "${loop_dev+1}" ]
-    then
-        losetup -d $loop_dev
-    fi
-    set -e
+	# Unmount and release loop device
+	set +e
+
+	if [ -n "${loop_dev_p1+1}" ]
+	then
+		umount -f $loop_dev_p1
+		losetup -d $loop_dev_p1
+	fi
+
+	if [ -n "${loop_dev+1}" ]
+	then
+		losetup -d $loop_dev
+	fi
+
+	set -e
 }
 
-trap "cleanup" SIGHUP SIGINT SIGTERM SIGQUIT EXIT
+trap "cleanup" SIGHUP SIGINT SIGTERM SIGQUIT
 
 # Checking if root-fs was generated for the provided image configuration
 if [ ! -e $BUILD_DIR/root-fs-$CONFIG_NAME.built ]
 then
-    report_error "Root-fs was not generated for the provided image configuration"
-    exit 1
+	report_error "Root-fs was not generated for the provided image configuration"
+	exit 1
 fi
 
 # Checking U-Boot
 if [ ! -e $UBOOT_IMAGE_FILE ]
 then
-    report_error "Please build U-Boot first"
-    exit 1
+	report_error "Please build U-Boot first"
+	exit 1
 fi
 
 # Checking kernel and boot script
 if [ ! -e $KERNEL_IMAGE_FILE ]
 then
-    report_error "Please build the kernel first"
-    exit 1
+	report_error "Please build the kernel first"
+	exit 1
 fi
 
 if [ ! -e $SCRIPT_BIN_FILE ]
 then
-    report_error "No boot script found"
-    exit 1
+	report_error "No boot script found"
+	exit 1
 fi
 
 # Checking kernel modules
 if [ ! -d $KERNEL_SRC_DIR/$KERNEL_MOD_DIR_NAME ]
 then
-    report_error "Build kernel modules first"
-    exit 1
+	report_error "Build kernel modules first"
+	exit 1
 fi
 
 # Checking stray /proc mount on root-fs directory
@@ -85,7 +100,7 @@ set +e
 report_info "Checking stray /proc mount on root-fs directory"
 if [ -d $ROOTFS_DIR/proc ]
 then
-    umount $ROOTFS_DIR/proc &> /dev/null
+	umount $ROOTFS_DIR/proc &> /dev/null
 fi
 set -e
 
@@ -97,7 +112,7 @@ rm -rf $OUTPUT_DIR/$IMAGE_NAME.img
 report_info "Making output directory if required"
 if [ ! -d $OUTPUT_DIR ]
 then
-    mkdir -p $OUTPUT_DIR
+	mkdir -p $OUTPUT_DIR
 fi
 
 # Creating empty image
@@ -144,22 +159,17 @@ dd bs=512 seek=$KERNEL_DD_SEEK if=$KERNEL_IMAGE_FILE of=$loop_dev
 report_info "Copying root-fs and kernel modules to the image"
 if [ ! -d $MOUNT_DIR ]
 then
-    mkdir -p $MOUNT_DIR
+	mkdir -p $MOUNT_DIR
 else
-    rm -rf $MOUNT_DIR
-    mkdir -p $MOUNT_DIR
+	rm -rf $MOUNT_DIR
+	mkdir -p $MOUNT_DIR
 fi
+
 mount $loop_dev_p1 $MOUNT_DIR
-$ADVCP_CMD -garp $ROOTFS_DIR/* $MOUNT_DIR/
-rsync -a --no-o --no-g $KERNEL_SRC_DIR/$KERNEL_MOD_DIR_NAME/lib/modules $MOUNT_DIR/lib/
-rsync -a --no-o --no-g $KERNEL_SRC_DIR/$KERNEL_MOD_DIR_NAME/lib/firmware $MOUNT_DIR/lib/
+$ADVCP_BIN -garp $ROOTFS_DIR/* $MOUNT_DIR/
 umount $loop_dev_p1
 
-# Releasing loop device
-report_info "Releasing loop device"
-losetup -d $loop_dev
-losetup -d $loop_dev_p1
-
-report_info "Process finished"
+cleanup
+report_process_finish
 
 exit 0
