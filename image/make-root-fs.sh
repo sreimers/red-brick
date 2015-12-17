@@ -57,6 +57,11 @@ function unmount {
 		umount -f $ROOTFS_DIR/sys
 	fi
 
+	if [ -e $ROOTFS_DIR/dev/pts ]
+	then
+		umount -f $ROOTFS_DIR/dev/pts
+	fi
+
 	if [ -e $ROOTFS_DIR/dev ]
 	then
 		umount -f $ROOTFS_DIR/dev
@@ -128,11 +133,13 @@ fi
 # Mounting critical filesystems on root-fs
 report_info "Mounting critical filesystems on root-fs"
 mkdir -p $ROOTFS_DIR/proc
-mount -t proc none $ROOTFS_DIR/proc
+mount -t proc proc $ROOTFS_DIR/proc
 mkdir -p $ROOTFS_DIR/sys
-mount -t sysfs none $ROOTFS_DIR/sys
+mount -t sysfs sysfs $ROOTFS_DIR/sys
 mkdir -p $ROOTFS_DIR/dev
 mount -o bind /dev $ROOTFS_DIR/dev
+mkdir -p $ROOTFS_DIR/dev/pts
+mount -o bind /dev/pts $ROOTFS_DIR/dev/pts
 
 # Starting multistrap
 aptcacher=`netstat -lnt | awk '$6 == "LISTEN" && $4 ~ ".3150"'`
@@ -507,11 +514,14 @@ then
 	$CHROOT <<EOF
 cd /tmp/mali-gpu
 dpkg -i libdri2-1_1.0-2_armhf.deb
-dpkg -i libsunxi-mali-x11_1.0-6_armhf.deb
+dpkg -i libsunxi-mali-x11_1.1-1_armhf.deb
 dpkg -i libvdpau-sunxi_1.0-1_armhf.deb
 dpkg -i sunxi-disp-test_1.0-1_armhf.deb
 dpkg -i libump_3.0-0sunxi1_armhf.deb
 dpkg -i xserver-xorg-video-sunximali_1.0-4_armhf.deb
+dpkg -i libegl1-mesa_2-1.1-1_armhf.deb
+dpkg -i libgles1-mesa_2-1.1-1_armhf.deb
+dpkg -i libgles2-mesa_2-1.1-1_armhf.deb
 dpkg --configure -a
 # add true here to avoid having a dpkg error abort the whole script here
 true
@@ -813,12 +823,20 @@ EOF
 # Installing openHAB
 report_info "Installing openHAB"
 $CHROOT <<EOF
+wget -qO - 'https://bintray.com/user/downloadSubjectPublicKey?username=openhab' | apt-key add -
 echo 'deb http://dl.bintray.com/openhab/apt-repo stable main' > /etc/apt/sources.list.d/openhab.list
 apt-get update
 apt-get install -y --force-yes openhab-runtime openhab-addon-binding-tinkerforge openhab-addon-action-tinkerforge
 systemctl daemon-reload
 systemctl disable openhab
 chown openhab:openhab /usr/share/openhab/webapps/static
+EOF
+
+# Installing signing key of official Mono repository
+report_info "Installing signing key of official Mono repository"
+$CHROOT <<EOF
+apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
+apt-get update
 EOF
 
 # Preparing kernel source
@@ -897,6 +915,7 @@ fi
 # Built file that indicates rootfs was made
 touch $BUILD_DIR/root-fs-$CONFIG_NAME.built
 
+trap - SIGHUP SIGINT SIGTERM SIGQUIT EXIT
 cleanup
 report_process_finish
 
